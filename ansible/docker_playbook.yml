@@ -1,0 +1,13 @@
+---
+- name: Install Docker on EC2 instances
+  hosts: nodes
+  become: true
+  tasks:
+    - name: Copy Docker installation script
+      copy:
+        src: ./install_docker.sh
+        dest: /tmp/install_docker.sh
+        mode: '0755'
+
+    - name: Run Docker installation script
+      command: /tmp/install_docker.sh

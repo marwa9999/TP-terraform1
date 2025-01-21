@@ -1,0 +1,5 @@
+ami_id          = "ami-06e02ae7bdac6b938"
+instance_type   = "t2.micro"
+bucket_name     = "bucket-terraform-unique-123456"
+key_pair_name   = "my-key"
+public_key_path = "~/.ssh/my-key.pub"
