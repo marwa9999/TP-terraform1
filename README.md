@@ -99,19 +99,32 @@ resource "aws_security_group" "main_sg" {
 # Bucket S3
 resource "aws_s3_bucket" "private_bucket" {
   bucket = var.bucket_name
-  acl    = "private"
-
-  versioning {
-    enabled = true
-  }
 
   tags = { Name = "BucketTerraform" }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [bucket]
+  }
+}
+
+resource "aws_s3_bucket_versioning" "private_bucket_versioning" {
+  bucket = aws_s3_bucket.private_bucket.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
 }
 
 # Paire de clés SSH
 resource "aws_key_pair" "my_key" {
   key_name   = var.key_pair_name
   public_key = file(var.public_key_path)
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [key_name]
+  }
 }
 
 # Instances EC2
@@ -137,6 +150,7 @@ resource "aws_instance" "ubuntu_server" {
     Name = "Node-${count.index + 1}"
   }
 }
+
 ```
 
 ##### **outputs.tf**
@@ -151,12 +165,12 @@ output "instance_public_ips" {
 ```hcl
 variable "aws_region" {
   description = "Région AWS pour le déploiement"
-  default     = "eu-west-3"
+  default     = "eu-west-3" # Exemple : Paris
 }
 
 variable "ami_id" {
   description = "ID de l'AMI à utiliser pour les instances EC2"
-  default     = "ami-06e02ae7bdac6b938" # Exemple : Ubuntu AMI
+  default     = "ami-06e02ae7bdac6b938" # Ubuntu 20.04
 }
 
 variable "instance_type" {
@@ -205,55 +219,48 @@ variable "public_key_path" {
 Un fichier `inventory.ini` a été créé pour lister les adresses IP des instances EC2 :
 ```ini
 [nodes]
-<instance_1_ip> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/my-key
-<instance_2_ip> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/my-key
-<instance_3_ip> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/my-key
-```
+13.38.103.191 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/my-key
+13.36.171.27 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/my-key
+35.180.121.64 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/my-key
 
+```
+#### **4. installer docker avec le fchier script**
+Le fichier `install_docker.sh` a été écrit pour installer Docker  :
+``` sh
+#!/bin/bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y ca-certificates curl gnupg
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable docker
+sudo systemctl start docker
+sudo chmod 777 /var/run/docker.sock
+sudo usermod -aG docker $USER
+docker --version && echo "Docker a été installé avec succès et est prêt à l'emploi."
+
+
+```
 #### **4. Création d'un playbook Ansible**
 Le fichier `docker_playbook.yml` a été écrit pour installer Docker sur toutes les instances EC2 :
 ```yaml
 ---
-- name: Installer Docker sur les instances EC2
+- name: Install Docker on EC2 instances
   hosts: nodes
   become: true
   tasks:
-    - name: Mettre à jour les paquets
-      apt:
-        update_cache: yes
+    - name: Copy Docker installation script
+      copy:
+        src: ./install_docker.sh
+        dest: /tmp/install_docker.sh
+        mode: '0755'
 
-    - name: Installer les prérequis
-      apt:
-        name: ["ca-certificates", "curl", "gnupg"]
-        state: present
+    - name: Run Docker installation script
+      command: /tmp/install_docker.sh
 
-    - name: Ajouter la clé GPG de Docker
-      command: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-
-    - name: Ajouter le dépôt Docker
-      shell: |
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
-        apt update
-
-    - name: Installer Docker
-      apt:
-        name: ["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin"]
-        state: present
-
-    - name: Activer et démarrer Docker
-      systemd:
-        name: docker
-        enabled: true
-        state: started
-
-    - name: Ajouter l'utilisateur ubuntu au groupe docker
-      user:
-        name: ubuntu
-        groups: docker
-        append: true
-
-    - name: Vérifier l'installation de Docker
-      command: docker --version
 ```
 
 #### **5. Exécution du playbook Ansible**
