@@ -277,6 +277,6 @@ ansible-playbook -i inventory.ini docker_playbook.yml
    ```
 4. Ajoutez le dépôt distant :
    ```bash
-   git remote add origin <votre_url_github>
+   git remote add origin https://github.com/marwa9999/TP-terraform1
   
 
